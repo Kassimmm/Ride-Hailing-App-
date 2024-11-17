@@ -1,3 +1,4 @@
+import time
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 import os
@@ -17,6 +18,7 @@ EDIT_PROFILE_URL = os.getenv('EDIT_PROFILE_URL', 'http://127.0.0.1:5000/edit')
 
 # In-memory session storage
 user_sessions = {}
+ride_history = {}
 
 # Menu options
 MENU = """
@@ -44,7 +46,55 @@ def generate_random_fare_and_eta():
     eta = random.randint(5, 15)
     return fare, eta
 
+# Simulate ride status updates asynchronously
+async def simulate_ride_status(user_phone):
+    user_data = user_sessions.get(user_phone, {})
+    await asyncio.sleep(2)
+    send_whatsapp_message(user_phone, f"🚘 Your driver will be arriving in {user_data['eta']} minutes.")
 
+    await asyncio.sleep(user_data["eta"] * 2)
+    send_whatsapp_message(user_phone, "✅ Your driver is here!")
+
+    user_data["ride_status"] = "in_progress"
+    await asyncio.sleep(5)
+    send_whatsapp_message(user_phone, "🚗 Your trip has started!")
+
+    user_data["ride_status"] = "complet ed"
+    await asyncio.sleep(10)
+    send_whatsapp_message(user_phone, "🏁 You have arrived at your destination!")
+   
+    user_data["end_time"] = time.time()
+    duration = int(user_data["end_time"] - user_data["start_time"])
+    send_whatsapp_message(
+        user_phone,
+        f"📋 Ride Summary:\n- Duration: {duration // 60} minutes\n- Fare: ${user_data['fare']}\n\n"
+        "Please rate your ride (1-5) and provide feedback."
+    )
+    
+    ride_history.setdefault(user_phone, []).append(user_data)
+
+
+# Function to send a WhatsApp message
+def send_whatsapp_message(phone_number, message):
+    """
+    Sends a WhatsApp message using Twilio API.
+    """
+    from twilio.rest import Client
+    
+    account_sid = os.getenv('TWILIO_ACCOUNT_SID')  # Replace with your Twilio Account SID
+    auth_token = os.getenv('TWILIO_AUTH_TOKEN')    # Replace with your Twilio Auth Token
+    whatsapp_number = "whatsapp:+14155238886"  # Twilio's WhatsApp sandbox number
+    
+    client = Client(account_sid, auth_token)
+    client.messages.create(
+        body=message,
+        from_=whatsapp_number,
+        to=f"whatsapp:+{phone_number}"
+    )
+    print(f"Message sent to {phone_number}: {message}")
+
+
+    
 
 def login_user(phone_number):
     """Attempt to log in the user."""
@@ -240,12 +290,25 @@ def whatsapp_webhook():
             response.message("🚫 Ride canceled. Share your *current location* to start again.")
         else:
             response.message("❌ Invalid input. Reply *CONFIRM* to book or *CANCEL* to restart.")
+
     elif stage == "ride_in_progress":
-        # Simulate ride status updates
-        response.message(
-            "🚗 Status Update: Your driver is almost there!\n"
-            "We'll notify you once the driver arrives. Enjoy your ride!"
-        )
+        if incoming_msg.lower() == "confirm":
+            response.message("✅ Your ride is confirmed! We'll keep you updated.")
+            asyncio.run(simulate_ride_status(user_phone))
+            user_data["stage"] = "completed"
+        elif incoming_msg.lower() == "cancel":
+            user_sessions.pop(user_phone, None)
+            response.message("🚫 Ride canceled. Start over to book a new ride.")
+        else:
+            response.message("❌ Invalid input. Reply *CANCEL* to restart.")
+    elif stage == "completed":
+        if incoming_msg.isdigit() and 1 <= int(incoming_msg) <= 5:
+            user_data["rating"] = int(incoming_msg)
+            user_data["feedback"] = None
+            response.message("Thank you for your rating! Feel free to share additional feedback if any.")
+        else:
+            user_data["feedback"] = incoming_msg
+            response.message("👍 Feedback received! Thanks for riding with us!")
 
     else:
         response.message("⚠️ Something went wrong. Please restart the conversation.")
