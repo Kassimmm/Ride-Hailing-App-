@@ -48,9 +48,10 @@ Welcome to the backend service for the Ride-Hailing App, a platform that enables
 2. **Create a virtual environment**:
   ```bash
   python -m venv venv  
-  source venv/bin/activate  # On Windows: venv\Scripts\activate
+  source venv/bin/activate
+  On Windows: venv\Scripts\activate
 
-3. **Set up the environment variables**:
+3. Set up the environment variables:
    ```bash
  DATABASE_URL=your_postgresql_database_url
  LOGIN_URL=http://127.0.0.1:5000/login  
@@ -58,12 +59,12 @@ Welcome to the backend service for the Ride-Hailing App, a platform that enables
  SECRET_KEY=your_secret_key  
 
 
-4. **Run the application**:
+4. Run the application:
 ```bash
   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-5. **Access the API documentation**:
-  Open your browser and navigate to:
+5. Access the API documentation:
+  Open your browser and navigate to
   
   Swagger UI: http://127.0.0.1:8000/docs
   ReDoc: http://127.0.0.1:8000/redoc
@@ -89,7 +90,7 @@ Access the hosted application:
 ## 🤝 Contributing
 Contributions are welcome! Please follow these steps:
 
-**Fork the repository**.
+Fork the repository.
 - Create a new branch: git checkout -b feature/your-feature-name.
 - Commit your changes: git commit -m 'Add some feature'.
 - Push to the branch: git push origin feature/your-feature-name.
