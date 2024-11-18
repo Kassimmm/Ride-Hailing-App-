@@ -59,7 +59,7 @@ async def simulate_ride_status(user_phone):
     await asyncio.sleep(5)
     send_whatsapp_message(user_phone, "🚗 Your trip has started!")
 
-    user_data["ride_status"] = "complet ed"
+    user_data["ride_status"] = "completed"
     await asyncio.sleep(10)
     send_whatsapp_message(user_phone, "🏁 You have arrived at your destination!")
    
@@ -71,7 +71,8 @@ async def simulate_ride_status(user_phone):
         "Please rate your ride (1-5) and provide feedback."
     )
     
-    ride_history.setdefault(user_phone, []).append(user_data)
+    user_data["stage"] = "collect_feedback"
+    ride_history.setdefault(user_phone, []).append(user_data.copy())
 
 
 # Function to send a WhatsApp message
@@ -214,9 +215,11 @@ def whatsapp_webhook():
             user_data["stage"] = "ride_start"
             response.message("🚗 Welcome to Ride Booking Service!\nShare your *current location* to begin. 📍")
         elif incoming_msg == "3":
-            response.message("📜 *View Ride History*: We'll fetch your ride history shortly!")
+            user_data["stage"] = "ride_history"
+            response.message("📜 *View Ride History*: We'll fetch your ride history shortly! \n\n Reply with *VIEW* to see your history or *CANCEL* to exit")
         elif incoming_msg == "4":
-            response.message("❌ *Cancel a Ride*: Please provide the ride ID to cancel.")
+            user_data["stage"] = "ride_start"
+            response.message("🚫 Ride canceled. Share your *current location* to start again.")
         else:
             response.message(f"❓ Invalid input. Please select an option from the menu below:\n{MENU}")
 
@@ -238,6 +241,7 @@ def whatsapp_webhook():
         except Exception as e:
             response.message(f"❌ Invalid input format. Please send your details as:\n"
                          "`Name: [Your Name], Emergency Contact: [Your Emergency Contact]`")
+
 
     elif stage == "ride_start":
         # Save current location and ask for destination
@@ -282,33 +286,60 @@ def whatsapp_webhook():
         if incoming_msg.lower() == "confirm":
             response.message(
                 "✅ Your ride is confirmed!\n🚘 Driver is on the way.\n"
-                "We'll keep you updated with the status."
+                "Reply *CONFIRM* to keep you updated with the status or *CANCEL* to restart."
             )
             user_data["stage"] = "ride_in_progress"
         elif incoming_msg.lower() == "cancel":
-            user_data["stage"] = "ride_start"
-            response.message("🚫 Ride canceled. Share your *current location* to start again.")
+            user_data["stage"] = "menu"
+            response.message(f"🚫 Ride canceled. Please select an option from the menu below to continue\n\n {MENU}")
         else:
             response.message("❌ Invalid input. Reply *CONFIRM* to book or *CANCEL* to restart.")
 
     elif stage == "ride_in_progress":
         if incoming_msg.lower() == "confirm":
+            user_data["start_time"] = time.time()
             response.message("✅ Your ride is confirmed! We'll keep you updated.")
             asyncio.run(simulate_ride_status(user_phone))
-            user_data["stage"] = "completed"
         elif incoming_msg.lower() == "cancel":
             user_sessions.pop(user_phone, None)
             response.message("🚫 Ride canceled. Start over to book a new ride.")
         else:
-            response.message("❌ Invalid input. Reply *CANCEL* to restart.")
-    elif stage == "completed":
+            response.message("❌ Invalid input. Reply CONFIRM to book or *CANCEL* to restart.")
+    elif stage == "collect_feedback":
         if incoming_msg.isdigit() and 1 <= int(incoming_msg) <= 5:
             user_data["rating"] = int(incoming_msg)
             user_data["feedback"] = None
             response.message("Thank you for your rating! Feel free to share additional feedback if any.")
         else:
             user_data["feedback"] = incoming_msg
-            response.message("👍 Feedback received! Thanks for riding with us!")
+            response.message(f"👍 Feedback received! Thanks for riding with us! Please select an option from the menu below to continue\n\n {MENU}")
+            user_data["stage"] = "menu"
+
+    elif stage == "ride_history":
+        if incoming_msg.lower() == "view":
+            rides = ride_history.get(user_phone, [])
+            if not rides:
+                response.message("📜 No ride history found.\n\n" + MENU)
+            else:
+                history = "\n\n".join(
+                    f"📍 *Ride {i + 1}*\n"
+                    f"- Type: {ride['ride_type']}\n"
+                    f"- Fare: ${ride['fare']}\n"
+                    f"- Duration: {int((ride['end_time'] - ride['start_time']) // 60)} minutes\n"
+                    for i, ride in enumerate(rides)
+                )
+                response.message(f"📜 *Ride History*:\n{history}\n\n{MENU}")
+            user_data["stage"] = "menu"  # Redirect to menu after showing history
+
+        elif incoming_msg.lower() == "cancel":
+            user_data["stage"] = "menu"
+            response.message(f"🚫 History search canceled. Returning to the menu.\n\n{MENU}")
+
+        else:
+            response.message(
+                f"❌ Invalid input. Please reply with 'view' to see your history or 'cancel' to exit.\n"
+            )
+        
 
     else:
         response.message("⚠️ Something went wrong. Please restart the conversation.")
